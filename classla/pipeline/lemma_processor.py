@@ -36,7 +36,21 @@ class LemmaProcessor(UDProcessor):
         else:
             self._use_identity = False
             # add pos_model_path for inf. lexicon load and pos_lemma_pretag to see wether lemmas are transfered or not
-            self._trainer = Trainer(args={'pos_model_path': self.pipeline.config['pos_model_path'], 'pos_lemma_pretag': self.pipeline.processors['pos'].config['lemma_pretag']}, model_file=config['model_path'], use_cuda=use_gpu)
+            pos_processor = self.pipeline.processors['pos']
+            pos_postprocessor = pos_processor.trainer.postprocessor
+            inflectional_lexicon = getattr(pos_postprocessor, 'lemma_dictionary', None)
+            inflectional_lexicon_entries = pos_processor.trainer.dict
+            self._trainer = Trainer(
+                args={
+                    'pos_model_path': self.pipeline.config['pos_model_path'],
+                    'pos_lemma_pretag': pos_processor.config['lemma_pretag'],
+                },
+                model_file=config['model_path'],
+                use_cuda=use_gpu,
+                inflectional_lexicon=inflectional_lexicon,
+                inflectional_lexicon_entries=inflectional_lexicon_entries,
+            )
+            pos_processor.trainer.dict = None
 
     def _set_up_requires(self):
         if self.config.get('pos') and not self.use_identity:

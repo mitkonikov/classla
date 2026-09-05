@@ -30,7 +30,8 @@ def unpack_batch(batch, use_cuda):
 
 class Trainer(object):
     """ A trainer for training models. """
-    def __init__(self, args=None, vocab=None, emb_matrix=None, model_file=None, use_cuda=False):
+    def __init__(self, args=None, vocab=None, emb_matrix=None, model_file=None, use_cuda=False,
+                 inflectional_lexicon=None, inflectional_lexicon_entries=None):
         self.use_cuda = use_cuda
         if model_file is not None:
             # load everything from file
@@ -58,8 +59,12 @@ class Trainer(object):
                 self.crit.cpu()
             self.optimizer = utils.get_optimizer(self.args['optim'], self.parameters, self.args['lr'])
 
-            if len(self.composite_dict) == 0 and args and 'pos_model_path' in args and args['pos_model_path'] is not None:
-                self.composite_dict = PosTrainer.load_inflectional_lexicon(args['pos_model_path'])
+            if len(self.composite_dict) == 0:
+                if inflectional_lexicon is not None:
+                    self.composite_dict = inflectional_lexicon
+                elif args and 'pos_model_path' in args and args['pos_model_path'] is not None:
+                    self.composite_dict = PosTrainer.load_inflectional_lexicon(
+                        args['pos_model_path'], entries=inflectional_lexicon_entries)
         self.pos_lemma_pretag = args['pos_lemma_pretag']
 
     def update(self, batch, eval=False):

@@ -43,10 +43,10 @@ def build_slovene_processor():
         "feats": FakeVocab(["<PAD>", "Case=Nom", "Degree=Pos"]),
     }
     lexicon = [
-        ("znana", "N", "NOUN", "Case=Nom"),
-        ("dvoumna", "N", "NOUN", "Case=Nom"),
-        ("dvoumna", "A", "ADJ", "Degree=Pos"),
-        ("dvoumna", "A", "NOUN", "Case=Nom"),
+        ("znana", "N", "NOUN", "Case=Nom", "znan"),
+        ("dvoumna", "N", "NOUN", "Case=Nom", "dvoumnež"),
+        ("dvoumna", "A", "ADJ", "Degree=Pos", "dvoumen"),
+        ("dvoumna", "A", "NOUN", "Case=Nom", "ignored-duplicate"),
     ]
     return SloveneInflectionalLexiconProcessor(lexicon, vocab, None, pos_lemma_pretag=True)
 
@@ -111,3 +111,13 @@ def test_slovene_lexicon_constraints_are_preserved():
     feat_predictions = [torch.tensor([[[2], [1], [2]]])]
     feats = processor.process_feats(feat_predictions, words, xpos, upos)
     assert feats == [["Case=Nom", "Degree=Pos", "Degree=Pos"]]
+
+
+def test_slovene_lexicon_builds_reusable_lemma_dictionary():
+    processor = build_slovene_processor()
+
+    assert processor.lemma_dictionary == {
+        ("znana", "N"): "znan",
+        ("dvoumna", "N"): "dvoumnež",
+        ("dvoumna", "A"): "dvoumen",
+    }

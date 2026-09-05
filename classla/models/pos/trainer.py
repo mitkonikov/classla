@@ -2,7 +2,11 @@
 A trainer class to handle training and testing of models.
 """
 
+import os
+import pickle
+from pathlib import Path
 import sys
+import time
 import logging
 import torch
 from torch import nn
@@ -51,6 +55,10 @@ class Trainer(BaseTrainer):
             inflectional_lexicon = self.dict
             self.postprocessor = InflectionalLexicon(inflectional_lexicon, args['shorthand'], self.vocab, pretrain,
                                                      args['lemma_pretag'])
+            # The postprocessor has extracted every view it needs, including
+            # the lemma dictionary.  Do not retain the multi-million-entry raw
+            # checkpoint list as a duplicate in memory.
+            self.dict = None
         else:
             if self.pos_lemma_pretag:
                 self.postprocessor = DefaultPostprocessor(None, self.vocab, None, pos_lemma_pretag=self.pos_lemma_pretag)
@@ -152,17 +160,86 @@ class Trainer(BaseTrainer):
         self.dict = checkpoint['dicts'] if 'dicts' in checkpoint else None
 
     @staticmethod
-    def load_inflectional_lexicon(filename):
+    def load_inflectional_lexicon(filename, entries=None):
+        """Load a cached lemma view of the POS inflectional lexicon.
+
+        The standard Slovene POS checkpoint contains millions of raw entries.
+        Converting them on every pipeline startup is much slower than loading
+        the model itself, so keep a versioned sidecar beside the checkpoint.
+        """
+        model_path = Path(filename)
+        signature = (model_path.stat().st_size, model_path.stat().st_mtime_ns)
+        cache_path = Path(str(model_path) + '.lemma_lexicon.pkl')
+
+        cached = Trainer._read_inflectional_lexicon_cache(cache_path, signature)
+        if cached is not None:
+            return cached
+
+        lock_path = Path(str(cache_path) + '.lock')
+        owns_lock = False
         try:
-            checkpoint = torch.load(filename, lambda storage, loc: storage, weights_only=False)
-        except BaseException:
-            logger.error("Cannot load model from {}".format(filename))
-            raise
+            lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.close(lock_fd)
+            owns_lock = True
+        except OSError:
+            # Another worker may be producing the cache.  Wait for it rather
+            # than making every process repeat the expensive conversion.
+            deadline = time.monotonic() + 600
+            while time.monotonic() < deadline:
+                cached = Trainer._read_inflectional_lexicon_cache(cache_path, signature)
+                if cached is not None:
+                    return cached
+                if not lock_path.exists():
+                    break
+                time.sleep(0.25)
 
-        inf_lexicon = {}
-        assert 'dicts' in checkpoint, Exception('Can not load inflectional dictionary. Make sure that your tagger model has it.')
-        for entry in checkpoint['dicts']:
-            if (entry[0], entry[1]) not in inf_lexicon:
-                inf_lexicon[(entry[0], entry[1])] = entry[4]
+        try:
+            if entries is None:
+                try:
+                    checkpoint = torch.load(filename, lambda storage, loc: storage, weights_only=False)
+                except BaseException:
+                    logger.error("Cannot load model from {}".format(filename))
+                    raise
+                assert 'dicts' in checkpoint, Exception('Can not load inflectional dictionary. Make sure that your tagger model has it.')
+                entries = checkpoint['dicts']
 
-        return inf_lexicon
+            # Reversing lets the dict comprehension retain the first original
+            # entry while doing the large conversion in optimized C bytecode.
+            inf_lexicon = {(entry[0], entry[1]): entry[4] for entry in reversed(entries)}
+            Trainer._write_inflectional_lexicon_cache(cache_path, signature, inf_lexicon)
+            return inf_lexicon
+        finally:
+            if owns_lock:
+                try:
+                    lock_path.unlink()
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _read_inflectional_lexicon_cache(cache_path, signature):
+        try:
+            with cache_path.open('rb') as stream:
+                payload = pickle.load(stream)
+            if payload.get('version') == 1 and payload.get('source') == signature:
+                return payload.get('lexicon')
+        except (OSError, EOFError, pickle.PickleError, AttributeError):
+            pass
+        return None
+
+    @staticmethod
+    def _write_inflectional_lexicon_cache(cache_path, signature, lexicon):
+        temporary_path = Path(str(cache_path) + '.{}.tmp'.format(os.getpid()))
+        try:
+            with temporary_path.open('wb') as stream:
+                pickle.dump(
+                    {'version': 1, 'source': signature, 'lexicon': lexicon},
+                    stream,
+                    protocol=pickle.HIGHEST_PROTOCOL,
+                )
+            os.replace(temporary_path, cache_path)
+        except OSError:
+            logger.warning("Could not write inflectional lexicon cache to %s", cache_path)
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass

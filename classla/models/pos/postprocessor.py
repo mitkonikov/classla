@@ -104,6 +104,7 @@ class SloveneInflectionalLexiconProcessor(InflectionalLexiconProcessor):
         self.xpos_vocab = vocab['xpos']
         self.upos_vocab = vocab['upos']
         self.feats_vocab = vocab['feats']
+        self.lemma_dictionary = {}
 
         self.extract_lexicon_data(lexicon)
 
@@ -200,6 +201,13 @@ class SloveneInflectionalLexiconProcessor(InflectionalLexiconProcessor):
         if lexicon is None:
             raise Exception("Inflectional lexicon is only supported for Slovenian standard models. If you are using other models, set `pos_use_lexicon` to `False` (or remove it). Otherwise, you have to re-download Slovenian models. You can do this by using the following command: classla.download('sl')")
         for key in lexicon:
+            # The lemmatizer needs the same source lexicon keyed by
+            # (lower-cased word, XPOS).  Build that view while POS already
+            # scans the entries instead of loading and scanning the large POS
+            # checkpoint for a second time.
+            if len(key) > 4:
+                self.lemma_dictionary.setdefault((key[0], key[1]), key[4])
+
             if key[1] in self.xpos_vocab:
                 self.hypothesis_dictionary_xpos.setdefault(key[0].lower(), []).append(key[1])
             else:
@@ -233,6 +241,10 @@ class InflectionalLexicon:
 
     def process_feats(self, padded_prediction, word_strings, xpos_preds, upos_preds):
         return self.processor.process_feats(padded_prediction, word_strings, xpos_preds, upos_preds)
+
+    @property
+    def lemma_dictionary(self):
+        return getattr(self.processor, 'lemma_dictionary', None)
 
 
 class DefaultPostprocessor(InflectionalLexiconProcessor):
