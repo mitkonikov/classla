@@ -33,6 +33,8 @@ class PairwiseBilinear(nn.Module):
         return output
 
 class BiaffineScorer(nn.Module):
+    EVAL_OUTPUT_BLOCK_SIZE = 32
+
     def __init__(self, input1_size, input2_size, output_size):
         super().__init__()
         self.W_bilin = nn.Bilinear(input1_size + 1, input2_size + 1, output_size)
@@ -43,6 +45,18 @@ class BiaffineScorer(nn.Module):
     def forward(self, input1, input2):
         input1 = torch.cat([input1, input1.new_ones(*input1.size()[:-1], 1)], len(input1.size())-1)
         input2 = torch.cat([input2, input2.new_ones(*input2.size()[:-1], 1)], len(input2.size())-1)
+        if not self.training:
+            leading_shape = input1.shape[:-1]
+            input1 = input1.reshape(-1, input1.size(-1))
+            input2 = input2.reshape(-1, input2.size(-1))
+            outputs = []
+            for weight, bias in zip(
+                    self.W_bilin.weight.split(self.EVAL_OUTPUT_BLOCK_SIZE),
+                    self.W_bilin.bias.split(self.EVAL_OUTPUT_BLOCK_SIZE)):
+                projected = input1.mm(weight.permute(1, 0, 2).reshape(input1.size(-1), -1))
+                projected = projected.view(input1.size(0), weight.size(0), input2.size(-1))
+                outputs.append((projected * input2.unsqueeze(1)).sum(2) + bias)
+            return torch.cat(outputs, -1).view(*leading_shape, self.W_bilin.out_features)
         return self.W_bilin(input1, input2)
 
 class PairwiseBiaffineScorer(nn.Module):
