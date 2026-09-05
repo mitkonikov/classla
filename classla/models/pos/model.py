@@ -89,7 +89,7 @@ class Tagger(nn.Module):
         self.drop = nn.Dropout(args['dropout'])
         self.worddrop = WordDropout(args['word_dropout'])
 
-    def forward(self, word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, word_orig_idx, sentlens, wordlens, word_string, postprocessor=None):
+    def forward(self, word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, word_orig_idx, sentlens, wordlens, word_string, postprocessor=None, compute_loss=True):
         
         def pack(x):
             return pack_padded_sequence(x, sentlens, batch_first=True)
@@ -125,8 +125,10 @@ class Tagger(nn.Module):
         upos_hid = F.relu(self.upos_hid(self.drop(lstm_outputs)))
         upos_pred = self.upos_clf(self.drop(upos_hid))
 
-        upos = pack(upos).data
-        loss = self.crit(upos_pred.view(-1, upos_pred.size(-1)), upos.view(-1))
+        loss = 0.0
+        if compute_loss:
+            upos = pack(upos).data
+            loss = self.crit(upos_pred.view(-1, upos_pred.size(-1)), upos.view(-1))
 
         if self.share_hid:
             xpos_hid = upos_hid
@@ -144,12 +146,14 @@ class Tagger(nn.Module):
 
             clffunc = lambda clf, hid: clf(self.drop(hid), self.drop(upos_emb))
 
-        xpos = pack(xpos).data
+        if compute_loss:
+            xpos = pack(xpos).data
         if isinstance(self.vocab['xpos'], CompositeVocab):
             xpos_preds = []
             for i in range(len(self.vocab['xpos'])):
                 xpos_pred = clffunc(self.xpos_clf[i], xpos_hid)
-                loss += self.crit(xpos_pred.view(-1, xpos_pred.size(-1)), xpos[:, i].view(-1))
+                if compute_loss:
+                    loss += self.crit(xpos_pred.view(-1, xpos_pred.size(-1)), xpos[:, i].view(-1))
                 xpos_preds.append(pad(xpos_pred).max(2, keepdim=True)[1])
             max_xpos_value = torch.cat(xpos_preds, 2)
 
@@ -160,7 +164,8 @@ class Tagger(nn.Module):
                 max_xpos_value = postprocessor.process_xpos(padded_xpos_pred, word_string)
             else:
                 max_xpos_value = padded_xpos_pred.max(2)[1]
-            loss += self.crit(xpos_pred.view(-1, xpos_pred.size(-1)), xpos.view(-1))
+            if compute_loss:
+                loss += self.crit(xpos_pred.view(-1, xpos_pred.size(-1)), xpos.view(-1))
 
         padded_upos_pred = pad(upos_pred)
         # if postprocessor.processor and postprocessor.processor.hypothesis_dictionary_upos:
@@ -172,10 +177,12 @@ class Tagger(nn.Module):
 
         preds.append(max_xpos_value)
         ufeats_preds = []
-        ufeats = pack(ufeats).data
+        if compute_loss:
+            ufeats = pack(ufeats).data
         for i in range(len(self.vocab['feats'])):
             ufeats_pred = clffunc(self.ufeats_clf[i], ufeats_hid)
-            loss += self.crit(ufeats_pred.view(-1, ufeats_pred.size(-1)), ufeats[:, i].view(-1))
+            if compute_loss:
+                loss += self.crit(ufeats_pred.view(-1, ufeats_pred.size(-1)), ufeats[:, i].view(-1))
             ufeats_preds.append(pad(ufeats_pred).max(2, keepdim=True)[1])
 
         # if postprocessor.processor and postprocessor.processor.hypothesis_dictionary_feats:

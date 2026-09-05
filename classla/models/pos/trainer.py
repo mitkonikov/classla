@@ -89,7 +89,7 @@ class Trainer(BaseTrainer):
         self.model.eval()
         batch_size = word.size(0)
         with torch.inference_mode():
-            _, preds = self.model(word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, word_orig_idx, sentlens, wordlens, word_string, postprocessor=self.postprocessor)
+            _, preds = self.model(word, word_mask, wordchars, wordchars_mask, upos, xpos, ufeats, pretrained, word_orig_idx, sentlens, wordlens, word_string, postprocessor=self.postprocessor, compute_loss=False)
 
         # upos_seqs = [self.vocab['upos'].unmap(sent) for sent in preds[0].tolist()]
         # feats_seqs = [self.vocab['feats'].unmap(sent) for sent in preds[2].tolist()]
