@@ -105,11 +105,8 @@ class Seq2SeqModel(nn.Module):
 
     def zero_state(self, inputs):
         batch_size = inputs.size(0)
-        h0 = torch.zeros(self.encoder.num_layers*2, batch_size, self.enc_hidden_dim, requires_grad=False)
-        c0 = torch.zeros(self.encoder.num_layers*2, batch_size, self.enc_hidden_dim, requires_grad=False)
-        if self.use_cuda:
-            return h0.cuda(), c0.cuda()
-        return h0, c0
+        shape = (self.encoder.num_layers * 2, batch_size, self.enc_hidden_dim)
+        return inputs.new_zeros(shape), inputs.new_zeros(shape)
 
     def encode(self, enc_inputs, lens):
         """ Encode source sequence. """
@@ -144,7 +141,7 @@ class Seq2SeqModel(nn.Module):
             enc_inputs = torch.cat([pos_inputs.unsqueeze(1), enc_inputs], dim=1)
             pos_src_mask = src_mask.new_zeros([batch_size, 1])
             src_mask = torch.cat([pos_src_mask, src_mask], dim=1)
-        src_lens = list(src_mask.data.eq(0).long().sum(1))
+        src_lens = src_mask.eq(0).sum(1).detach().cpu().tolist()
 
         h_in, (hn, cn) = self.encode(enc_inputs, src_lens)
 
@@ -173,7 +170,7 @@ class Seq2SeqModel(nn.Module):
             enc_inputs = torch.cat([pos_inputs.unsqueeze(1), enc_inputs], dim=1)
             pos_src_mask = src_mask.new_zeros([batch_size, 1])
             src_mask = torch.cat([pos_src_mask, src_mask], dim=1)
-        src_lens = list(src_mask.data.eq(constant.PAD_ID).long().sum(1))
+        src_lens = src_mask.eq(constant.PAD_ID).sum(1).detach().cpu().tolist()
 
         # encode source
         h_in, (hn, cn) = self.encode(enc_inputs, src_lens)
@@ -198,9 +195,11 @@ class Seq2SeqModel(nn.Module):
             _, preds = log_probs.squeeze(1).max(1, keepdim=True)
             dec_inputs = self.embedding(preds) # update decoder inputs
             max_len += 1
-            for i in range(batch_size):
+            # One bulk device-to-host transfer per autoregressive step avoids
+            # synchronizing CUDA separately for every active word.
+            pred_ids = preds.squeeze(1).detach().cpu().tolist()
+            for i, token in enumerate(pred_ids):
                 if not done[i]:
-                    token = preds.data[i][0].item()
                     if token == constant.EOS_ID:
                         done[i] = True
                         total_done += 1
@@ -221,7 +220,7 @@ class Seq2SeqModel(nn.Module):
             enc_inputs = torch.cat([pos_inputs.unsqueeze(1), enc_inputs], dim=1)
             pos_src_mask = src_mask.new_zeros([batch_size, 1])
             src_mask = torch.cat([pos_src_mask, src_mask], dim=1)
-        src_lens = list(src_mask.data.eq(constant.PAD_ID).long().sum(1))
+        src_lens = src_mask.eq(constant.PAD_ID).sum(1).detach().cpu().tolist()
 
         # (1) encode source
         h_in, (hn, cn) = self.encode(enc_inputs, src_lens)

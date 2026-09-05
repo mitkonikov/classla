@@ -98,7 +98,8 @@ class Trainer(object):
 
         self.model.eval()
         batch_size = src.size(0)
-        preds, edit_logits = self.model.predict(src, src_mask, pos=pos, beam_size=beam_size)
+        with torch.inference_mode():
+            preds, edit_logits = self.model.predict(src, src_mask, pos=pos, beam_size=beam_size)
         pred_seqs = [self.vocab['char'].unmap(ids) for ids in preds] # unmap to tokens
         pred_seqs = utils.prune_decoded_seqs(pred_seqs)
         pred_tokens = ["".join(seq) for seq in pred_seqs] # join chars to be tokens
