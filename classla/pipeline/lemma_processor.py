@@ -2,6 +2,8 @@
 Processor for performing lemmatization
 """
 
+from collections import OrderedDict
+
 from classla.models.common import doc
 from classla.models.lemma.data import DataLoader
 from classla.models.lemma.trainer import Trainer
@@ -18,10 +20,12 @@ class LemmaProcessor(UDProcessor):
     REQUIRES_DEFAULT = set([TOKENIZE])
     # default batch size
     DEFAULT_BATCH_SIZE = 5000
+    DEFAULT_CACHE_SIZE = 100000
 
     def __init__(self, config, pipeline, use_gpu):
         # run lemmatizer in identity mode
         self._use_identity = None
+        self._prediction_cache = None
         super().__init__(config, pipeline, use_gpu)
 
     @property
@@ -35,6 +39,10 @@ class LemmaProcessor(UDProcessor):
             self.config['batch_size'] = LemmaProcessor.DEFAULT_BATCH_SIZE
         else:
             self._use_identity = False
+            cache_size = int(config.get('cache_size', self.DEFAULT_CACHE_SIZE))
+            if cache_size < 0:
+                raise ValueError("Lemma cache size cannot be negative.")
+            self._prediction_cache = _LemmaPredictionCache(cache_size)
             # add pos_model_path for inf. lexicon load and pos_lemma_pretag to see wether lemmas are transfered or not
             pos_processor = self.pipeline.processors['pos']
             pos_postprocessor = pos_processor.trainer.postprocessor
@@ -70,7 +78,25 @@ class LemmaProcessor(UDProcessor):
         else:
             if self.config.get('ensemble_dict', False):
                 # skip the seq2seq model when we can
-                skip = self.trainer.skip_seq2seq([(e[0].lower(),e[1],e[2]) for e in batch.doc.get([doc.TEXT, doc.XPOS, doc.LEMMA])])
+                entries = batch.doc.get([doc.TEXT, doc.XPOS, doc.LEMMA])
+                pairs = [(e[0].lower(), e[1], e[2]) for e in entries]
+                cache_keys = [(e[0], e[1]) for e in entries]
+                skip = self.trainer.skip_seq2seq(pairs)
+                cached = {}
+                duplicate_of = {}
+                pending = {}
+                for index, (dictionary_hit, cache_key) in enumerate(zip(skip, cache_keys)):
+                    if dictionary_hit:
+                        continue
+                    cached_prediction = self._prediction_cache.get(cache_key)
+                    if cached_prediction is not None:
+                        cached[index] = cached_prediction
+                        skip[index] = True
+                    elif cache_key in pending:
+                        duplicate_of[index] = pending[cache_key]
+                        skip[index] = True
+                    else:
+                        pending[cache_key] = index
                 seq2seq_batch = DataLoader(document, self.config['batch_size'], self.config, vocab=self.vocab,
                                            evaluation=True, skip=skip)
             else:
@@ -89,13 +115,19 @@ class LemmaProcessor(UDProcessor):
                 # expand seq2seq predictions to the same size as all words
                 i = 0
                 preds1 = []
-                for s in skip:
-                    if s:
+                for index, s in enumerate(skip):
+                    if index in cached:
+                        preds1.append(cached[index])
+                    elif index in duplicate_of:
+                        preds1.append(preds1[duplicate_of[index]])
+                    elif s:
                         preds1.append('')
                     else:
-                        preds1.append(preds[i])
+                        prediction = preds[i]
+                        preds1.append(prediction)
+                        self._prediction_cache.put(cache_keys[index], prediction)
                         i += 1
-                preds = self.trainer.ensemble([(e[0].lower(),e[1],e[2]) for e in batch.doc.get([doc.TEXT, doc.XPOS, doc.LEMMA])], preds1)
+                preds = self.trainer.ensemble(pairs, preds1)
             else:
                 preds = self.trainer.postprocess(batch.doc.get([doc.TEXT]), preds, edits=edits)
 
@@ -103,3 +135,27 @@ class LemmaProcessor(UDProcessor):
         preds = [max([(len(x), x), (0, '_')])[1] for x in preds]
         batch.doc.set([doc.LEMMA], preds)
         return batch.doc
+
+
+class _LemmaPredictionCache:
+    """A small LRU cache for deterministic seq2seq lemma predictions."""
+
+    def __init__(self, max_size):
+        self.max_size = max_size
+        self._values = OrderedDict()
+
+    def get(self, key):
+        if self.max_size == 0:
+            return None
+        value = self._values.get(key)
+        if value is not None:
+            self._values.move_to_end(key)
+        return value
+
+    def put(self, key, value):
+        if self.max_size == 0:
+            return
+        self._values[key] = value
+        self._values.move_to_end(key)
+        if len(self._values) > self.max_size:
+            self._values.popitem(last=False)
