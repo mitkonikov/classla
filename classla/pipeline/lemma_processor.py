@@ -68,7 +68,9 @@ class LemmaProcessor(UDProcessor):
 
     def process(self, document):
         if not self.use_identity:
-            batch = DataLoader(document, self.config['batch_size'], self.config, vocab=self.vocab, evaluation=True)
+            batch = DataLoader(
+                document, self.config['batch_size'], self.config, vocab=self.vocab,
+                evaluation=True, inference_only=True)
         else:
             batch = DataLoader(document, self.config['batch_size'], self.config, evaluation=True, conll_only=True)
         if self.use_identity:
@@ -98,7 +100,7 @@ class LemmaProcessor(UDProcessor):
                     else:
                         pending[cache_key] = index
                 seq2seq_batch = DataLoader(document, self.config['batch_size'], self.config, vocab=self.vocab,
-                                           evaluation=True, skip=skip)
+                                           evaluation=True, skip=skip, inference_only=True)
             else:
                 seq2seq_batch = batch
 

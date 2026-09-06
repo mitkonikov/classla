@@ -11,13 +11,15 @@ from classla.models.common.doc import *
 logger = logging.getLogger('classla')
 
 class DataLoader:
-    def __init__(self, doc, batch_size, args, pretrain, vocab=None, evaluation=False, sort_during_eval=False):
+    def __init__(self, doc, batch_size, args, pretrain, vocab=None, evaluation=False, sort_during_eval=False,
+                 inference_only=False):
         self.batch_size = batch_size
         self.args = args
         self.eval = evaluation
         self.shuffled = not self.eval
         self.sort_during_eval = sort_during_eval
         self.doc = doc
+        self.inference_only = inference_only
 
         data = self.load_doc(self.doc)
 
@@ -64,9 +66,12 @@ class DataLoader:
         for sent in data:
             processed_sent = [vocab['word'].map([w[0] for w in sent])]
             processed_sent += [[vocab['char'].map([x for x in w[0]]) for w in sent]]
-            processed_sent += [vocab['upos'].map([w[1] for w in sent])]
-            processed_sent += [vocab['xpos'].map([w[2] for w in sent])]
-            processed_sent += [vocab['feats'].map([w[3] for w in sent])]
+            if self.inference_only:
+                processed_sent += [None, None, None]
+            else:
+                processed_sent += [vocab['upos'].map([w[1] for w in sent])]
+                processed_sent += [vocab['xpos'].map([w[2] for w in sent])]
+                processed_sent += [vocab['feats'].map([w[3] for w in sent])]
             processed_sent += [pretrain_vocab.map([w[0] for w in sent])]
             processed_sent += [[w[0].lower() for w in sent]]
             processed.append(processed_sent)
@@ -104,9 +109,9 @@ class DataLoader:
         wordchars = get_long_tensor(batch_words, len(word_lens))
         wordchars_mask = torch.eq(wordchars, PAD_ID)
 
-        upos = get_long_tensor(batch[2], batch_size)
-        xpos = get_long_tensor(batch[3], batch_size)
-        ufeats = get_long_tensor(batch[4], batch_size)
+        upos = None if self.inference_only else get_long_tensor(batch[2], batch_size)
+        xpos = None if self.inference_only else get_long_tensor(batch[3], batch_size)
+        ufeats = None if self.inference_only else get_long_tensor(batch[4], batch_size)
         pretrained = get_long_tensor(batch[5], batch_size)
         word_string = batch[6]
         sentlens = [len(x) for x in batch[0]]

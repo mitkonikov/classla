@@ -14,12 +14,14 @@ from classla.models.common.doc import *
 logger = logging.getLogger('classla')
 
 class DataLoader:
-    def __init__(self, doc, batch_size, args, vocab=None, evaluation=False, conll_only=False, skip=None):
+    def __init__(self, doc, batch_size, args, vocab=None, evaluation=False, conll_only=False, skip=None,
+                 inference_only=False):
         self.batch_size = batch_size
         self.args = args
         self.eval = evaluation
         self.shuffled = not self.eval
         self.doc = doc
+        self.inference_only = inference_only
 
         data = self.load_doc(self.doc)
 
@@ -68,16 +70,19 @@ class DataLoader:
     def preprocess(self, data, char_vocab, pos_vocab, args):
         processed = []
         for d in data:
-            edit_type = edit.EDIT_TO_ID[edit.get_edit_type(d[0], d[2])]
             src = list(d[0])
             src = [constant.SOS] + src + [constant.EOS]
             src = char_vocab.map(src)
             pos = d[1]
             pos = pos_vocab.unit2id(pos)
-            tgt = list(d[2])
-            tgt_in = char_vocab.map([constant.SOS] + tgt)
-            tgt_out = char_vocab.map(tgt + [constant.EOS])
-            processed += [[src, tgt_in, tgt_out, pos, edit_type]]
+            if self.inference_only:
+                processed += [[src, None, None, pos, None]]
+            else:
+                edit_type = edit.EDIT_TO_ID[edit.get_edit_type(d[0], d[2])]
+                tgt = list(d[2])
+                tgt_in = char_vocab.map([constant.SOS] + tgt)
+                tgt_out = char_vocab.map(tgt + [constant.EOS])
+                processed += [[src, tgt_in, tgt_out, pos, edit_type]]
         return processed
 
     def __len__(self):
@@ -102,11 +107,12 @@ class DataLoader:
         src = batch[0]
         src = get_long_tensor(src, batch_size)
         src_mask = torch.eq(src, constant.PAD_ID)
-        tgt_in = get_long_tensor(batch[1], batch_size)
-        tgt_out = get_long_tensor(batch[2], batch_size)
+        tgt_in = None if self.inference_only else get_long_tensor(batch[1], batch_size)
+        tgt_out = None if self.inference_only else get_long_tensor(batch[2], batch_size)
         pos = torch.LongTensor(batch[3])
-        edits = torch.LongTensor(batch[4])
-        assert tgt_in.size(1) == tgt_out.size(1), "Target input and output sequence sizes do not match."
+        edits = None if self.inference_only else torch.LongTensor(batch[4])
+        if not self.inference_only:
+            assert tgt_in.size(1) == tgt_out.size(1), "Target input and output sequence sizes do not match."
         return src, src_mask, tgt_in, tgt_out, pos, edits, orig_idx
 
     def __iter__(self):

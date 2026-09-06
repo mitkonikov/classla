@@ -84,6 +84,10 @@ class TokenizeProcessor(UDProcessor):
             return self._variant.process(document)
         else:
             raw_text, document, metadocument = self._tokenizer.tokenize(document)
+        return self.process_tokenized(raw_text, document, metadocument)
+
+    def process_tokenized(self, raw_text, document, metadocument=None):
+        """Build a CLASSLA document from externally tokenized data."""
         # clean unnecessary attributes
 
         pos_lemma_pretag = (not ('pos' in self.pipeline.processors and self.pipeline.processors['pos'].config['lemma_pretag']))

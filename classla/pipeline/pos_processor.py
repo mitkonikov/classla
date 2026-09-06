@@ -45,7 +45,7 @@ class POSProcessor(UDProcessor):
     def process(self, document):
         batch = DataLoader(
             document, self.config['batch_size'], self.config, self.pretrain, vocab=self.vocab, evaluation=True,
-            sort_during_eval=True)
+            sort_during_eval=True, inference_only=True)
         preds = []
         for i, b in enumerate(batch):
             preds += self.trainer.predict(b)
