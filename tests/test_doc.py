@@ -31,6 +31,16 @@ def test_basic_values(doc, sentences_dict):
         for token, raw_token in zip(sentence.tokens, raw_sentence):
             assert token.text == raw_token[TEXT]
 
+
+def test_empty_sentences_are_ignored(sentences_dict):
+    document = Document([[], sentences_dict[0], []])
+
+    assert len(document.sentences) == 1
+    assert [token.text for token in document.sentences[0].tokens] == ["unban", "mox", "opal"]
+    assert document.num_tokens == 3
+    assert document.num_words == 3
+
+
 def test_set_sentence(doc):
     """
     Test setting a field on the sentences themselves
@@ -53,5 +63,4 @@ def test_set_tokens(doc):
 
     result = doc.get(NER, from_token=True)
     assert result == ner_contents
-
 

@@ -145,6 +145,11 @@ class Document(StanzaObject):
         self.sentences = []
         metasentences = metasentences if metasentences else [None] * len(sentences)
         for tokens, metadata in zip(sentences, metasentences):
+            # Some external tokenizers can emit an empty sentence for malformed
+            # or boundary-only input. It carries no linguistic information and
+            # cannot be represented by Sentence, which expects at least one word.
+            if not tokens:
+                continue
             self.sentences.append(Sentence(tokens, doc=self, metadata=metadata))
             sentence_text = ''
             if metadata:
@@ -389,7 +394,11 @@ class Sentence(StanzaObject):
 
         # check if there is dependency info
         is_complete_dependencies = all(word.head is not None and word.deprel is not None for word in self.words)
-        is_complete_words = (len(self.words) >= len(self.tokens)) and (len(self.words) == self.words[-1].id)
+        is_complete_words = (
+            bool(self.words)
+            and len(self.words) >= len(self.tokens)
+            and len(self.words) == self.words[-1].id
+        )
         if is_complete_dependencies and is_complete_words: self.build_dependencies()
 
     @property
