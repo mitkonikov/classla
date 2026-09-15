@@ -32,6 +32,7 @@ text and character offsets; entity counts alone are not sufficient.
 | 4: `ner-optimization-step4-threads` | 32.867 | 60.85 | 31.613 | 26.590 | 2,000/2,000 articles |
 | 4: `ner-optimization-step4-workers2` | 17.393 | 114.99 | 9.298 | 17.099 | 2,000/2,000 articles |
 | 4: `ner-optimization-step4-workers4` | 17.544 | 114.00 | 6.930 | 15.925 | 2,000/2,000 articles |
+| 5: `ner-optimization-step5` | 13.737 | 145.60 | 9.425 | 13.445 | 2,000/2,000 articles |
 
 ## Step 1: skip training loss during prediction
 
@@ -91,6 +92,24 @@ summary grouping includes pipeline depth to avoid mixing different configuration
 
 Use `--pipeline-depth 3 --tokenizer-workers 2` to enable this path. Defaults remain
 sequential for compatibility and explicit timing comparisons.
+
+## Step 5: batched CPU Viterbi decoding
+
+A 512-article sequential cProfile run (`ner-step4-profile.prof`) found 7,040
+scalar Viterbi calls taking 1.518 s of 5.324 s inside NERProcessor (including
+warm-up). The profiled run is diagnostic only; instrumentation overhead makes
+its 15.325 s extraction wall time unsuitable for throughput comparison.
+
+Vectorize the NumPy recurrence across independent sentences, keeping scalar
+per-sentence backtrace, first-index argmax tie breaking and original score dtype.
+The existing scalar decoder remains available and unchanged. No new dependency
+or approximate decoder is introduced. Nine NER tests pass, covering random scores,
+ties, float32/float64, unequal/one-token lengths, empty batches, real-model loss
+and training. Eleven earlier POS/lemma regression tests also pass.
+
+At depth 3 / two tokenizer workers, observed wall time falls another 21.0% versus
+step 4 workers2, reaching 4.40x original baseline throughput. Complete entity JSON
+matches for all 2,000 articles. A final larger-sample repeat check follows below.
 
 ## Reproduce a run
 

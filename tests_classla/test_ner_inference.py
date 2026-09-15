@@ -2,6 +2,7 @@
 
 import os
 
+import numpy as np
 import pytest
 import torch
 
@@ -106,3 +107,28 @@ def test_length_batches_restore_original_order():
                        preprocess_tags=False, inference_only=True, sort_during_eval=True)
     assert len(empty) == 0
     assert empty.data_orig_idx == []
+
+
+@pytest.mark.parametrize('dtype', [np.float32, np.float64])
+@pytest.mark.parametrize('ties', [False, True])
+def test_batched_viterbi_matches_scalar(dtype, ties):
+    from classla.models.common.crf import viterbi_decode, viterbi_decode_batch
+
+    rng = np.random.default_rng(42)
+    for lengths in ([1], [1, 17, 3, 8], [31] * 16):
+        scores = rng.normal(size=(len(lengths), max(lengths), 9)).astype(dtype)
+        transitions = rng.normal(size=(9, 9)).astype(dtype)
+        if ties:
+            scores.fill(0)
+            transitions.fill(0)
+        expected = [viterbi_decode(scores[i, :length], transitions)[0]
+                    for i, length in enumerate(lengths)]
+        assert viterbi_decode_batch(scores, transitions, lengths) == expected
+
+
+def test_batched_viterbi_empty_and_invalid_lengths():
+    from classla.models.common.crf import viterbi_decode_batch
+
+    assert viterbi_decode_batch(np.zeros((0, 0, 2)), np.zeros((2, 2)), []) == []
+    with pytest.raises(ValueError, match='positive'):
+        viterbi_decode_batch(np.zeros((1, 2, 2)), np.zeros((2, 2)), [0])

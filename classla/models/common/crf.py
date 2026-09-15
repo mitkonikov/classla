@@ -122,6 +122,38 @@ def viterbi_decode(scores, transition_params):
     viterbi_score = np.max(trellis[-1])
     return viterbi, viterbi_score
 
+def viterbi_decode_batch(scores, transition_params, lengths):
+    """Decode independent padded sentences, vectorizing across the batch.
+
+    Preserve NumPy argmax's first-index tie breaking and the scalar decoder's
+    score dtype. Only backtrace remains per sentence. No GPU tensors are needed.
+    """
+    lengths = np.asarray(lengths, dtype=np.int64)
+    if scores.ndim != 3 or lengths.shape != (scores.shape[0],):
+        raise ValueError('Expected batch x time x tags scores and one length per sentence')
+    if np.any(lengths < 1) or np.any(lengths > scores.shape[1]):
+        raise ValueError('Sentence lengths must be positive and fit the score tensor')
+    if transition_params.shape != (scores.shape[2], scores.shape[2]):
+        raise ValueError('Transition matrix does not match tag count')
+    if not len(lengths):
+        return []
+    state = scores[:, 0].copy()
+    backpointers = np.empty(scores.shape, dtype=np.int32)
+    for step in range(1, int(lengths.max())):
+        candidates = state[:, :, None] + transition_params[None, :, :]
+        next_state = scores[:, step] + candidates.max(axis=1)
+        backpointers[:, step] = candidates.argmax(axis=1)
+        active = lengths > step
+        state[active] = next_state[active]
+    paths = []
+    for row, length in enumerate(lengths):
+        path = [int(state[row].argmax())]
+        for step in range(int(length) - 1, 0, -1):
+            path.append(int(backpointers[row, step, path[-1]]))
+        paths.append(path[::-1])
+    return paths
+
+
 def log_sum_exp(value, dim=None, keepdim=False):
     """Numerically stable implementation of the operation
     value.exp().sum(dim, keepdim).log()

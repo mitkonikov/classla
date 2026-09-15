@@ -11,7 +11,7 @@ from classla.models.common.trainer import Trainer as BaseTrainer
 from classla.models.common import utils, loss
 from classla.models.ner.model import NERTagger
 from classla.models.ner.vocab import MultiVocab
-from classla.models.common.crf import viterbi_decode
+from classla.models.common.crf import viterbi_decode_batch
 
 logger = logging.getLogger('classla')
 
@@ -81,10 +81,8 @@ class Trainer(BaseTrainer):
         # decode
         trans = trans.data.cpu().numpy()
         scores = logits.data.cpu().numpy()
-        bs = logits.size(0)
         tag_seqs = []
-        for i in range(bs):
-            tags, _ = viterbi_decode(scores[i, :sentlens[i]], trans)
+        for tags in viterbi_decode_batch(scores, trans, sentlens):
             tag_names = []
             used_tags = set()
             # hand-fixed BIO tags that don't begin with B but I
@@ -132,4 +130,3 @@ class Trainer(BaseTrainer):
         self.vocab = MultiVocab.load_state_dict(checkpoint['vocab'])
         self.model = NERTagger(self.args, self.vocab)
         self.model.load_state_dict(checkpoint['model'], strict=False)
-
