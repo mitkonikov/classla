@@ -286,14 +286,39 @@ not Numba alone. Inner threading is implemented/tested but remains optional;
 it did not improve this selected configuration. No forced default change to
 Numba: installations without the optional dependency retain NumPy decoding.
 
+### Round-2 full-sample validation
+
+`ner-round2-final10k` completed all 10,000 articles in **102.403 s**
+(97.653 articles/s), using Numba and inner depth 1. Warm-up: 2.262 s;
+tokenization/preparation: 85.059 s; NER: 100.846 s; postprocessing: 1.164 s.
+The stages overlap, so their durations must not be added. CUDA peak allocated:
+113,893,376 bytes; parent peak RSS: 1,218,326,528 bytes (excludes tokenizer workers).
+All **145,079 entities** match the original full-sample baseline exactly, including
+labels, text, offsets and article membership (zero differing/missing JSON rows).
+
+This is one full-sample validation run, not three repetitions. The prior round's
+three-run mean was 161.348 s; the stronger current causal comparison is the
+alternating 2,000-article control experiment above (1.53x throughput). Do not
+advertise the fastest isolated tuning run as expected production throughput.
+
+Verified versions: Python 3.14, Torch 2.14.0+cu130, NumPy 2.5.3, Numba 0.67.0,
+llvmlite 0.49.0, editable CLASSLA fork reporting 2.2.2. Final checks: 31 focused
+CLASSLA NER/POS/lemma tests and 17 Semora tests pass; Semora lint/type checking
+pass. No production corpus/database/index or Nora environment was modified.
+Source commits: CLASSLA `c163d81` (implementation), Semora `64cd932` (controls)
+and `82d740b` (dependency provenance). History updates are separate commits.
+
 ## Reproduce a run
 
 ```powershell
 $py = 'C:/GitHub/semora/artifacts/ner-benchmark/.venv/Scripts/python.exe'
+# Only if Numba is not already installed in this isolated environment:
+# uv pip install --python $py numba
 & $py -m semora.diagnostics.ner run `
   --sample C:/GitHub/semora/artifacts/ner-benchmark/sample.sqlite `
   --adapter classla --device cuda --batch-size 16 --batch-articles 32 `
   --pipeline-depth 3 --tokenizer-workers 2 --sentence-order input `
+  --ner-decoder numba --ner-pipeline-depth 1 `
   --output C:/GitHub/semora/artifacts/ner-benchmark/NEW_RUN
 ```
 
