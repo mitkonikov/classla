@@ -71,6 +71,11 @@ class Trainer(BaseTrainer):
 
     @torch.inference_mode()
     def predict(self, batch, unsort=True):
+        return self.decode_scores(self.predict_scores(batch), unsort=unsort)
+
+    @torch.inference_mode()
+    def predict_scores(self, batch):
+        """Single GPU owner; returned arrays are CPU-only and safe for decoding threads."""
         inputs, orig_idx, word_orig_idx, char_orig_idx, sentlens, wordlens, charlens, charoffsets = unpack_batch(batch, self.use_cuda)
         word, word_mask, wordchars, wordchars_mask, chars, tags = inputs
 
@@ -81,8 +86,15 @@ class Trainer(BaseTrainer):
         # decode
         trans = trans.data.cpu().numpy()
         scores = logits.data.cpu().numpy()
+        return scores, trans, sentlens, orig_idx
+
+    def decode_scores(self, prediction, unsort=True):
+        scores, trans, sentlens, orig_idx = prediction
+        decode = viterbi_decode_batch
+        if getattr(self, 'decoder', 'numpy') == 'numba':
+            from classla.models.ner.numba_decode import decode
         tag_seqs = []
-        for tags in viterbi_decode_batch(scores, trans, sentlens):
+        for tags in decode(scores, trans, sentlens):
             tag_names = []
             used_tags = set()
             # hand-fixed BIO tags that don't begin with B but I

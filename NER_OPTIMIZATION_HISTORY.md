@@ -217,6 +217,41 @@ tokenization time also changed substantially. Do not attribute that whole-run
 difference to tensor construction or compare these rates directly to round 1.
 Subsequent controlled configuration trials are recorded below.
 
+### Inner preparation/decoding and optional Numba trial
+
+Split prediction into CPU-score production and CPU decoding. The optional inner
+pipeline prepares CPU tensors ahead and decodes earlier scores while the caller
+runs the GPU model. Each preparation/decoding queue is bounded by inner depth;
+the currently executing batch is additional. One thread owns each CPU stage and
+GPU inference stays on the caller. Exceptions and early close shut down both
+executors. Default inner depth is 1, retaining serial execution.
+
+Optional `classla[ner-jit]` uses Numba (tested 0.67.0 / llvmlite 0.49.0) for Viterbi.
+Only the isolated benchmark environment was extended; existing Torch/NumPy and
+Nora's environment were not changed. The kernel uses `nogil=True`, caching, no
+fast-math, original precision and first-index tie breaking. NumPy remains the
+default and handles non-finite/unusual-dtype inputs. Compilation is outside the
+steady-state timer in model warm-up; warm-up durations are retained in metrics.
+
+| 2,000-article trial | Wall s | Articles/s | Tokenization s | NER s | Exact baseline equivalence |
+|---|---:|---:|---:|---:|---|
+| `ner-round2-numpy-depth1` | 23.213 | 86.16 | 16.394 | 22.815 | 2,000/2,000 |
+| `ner-round2-numpy-depth2` | 21.262 | 94.06 | 16.317 | 20.867 | 2,000/2,000 |
+| `ner-round2-numpy-depth3` | 14.745 | 135.64 | 11.334 | 14.396 | 2,000/2,000 |
+| `ner-round2-numba-depth2` | 12.363 | 161.77 | 10.053 | 12.044 | 2,000/2,000 |
+| `ner-round2-numba-depth1` | 11.512 | 173.73 | 10.049 | 11.215 | 2,000/2,000 |
+
+All runs keep outer depth 3, two tokenizer workers and original sentence order.
+Twenty NER tests pass: real-model/training, input equivalence, pipeline ownership/
+order/failure cleanup, and Numba-versus-NumPy random/tied/uneven/non-finite cases.
+Threading is not assumed faster: Numba depth 1 won this initial sweep. Alternating
+controls and a full-sample validation follow before recommending settings.
+
+Pinned input copies are deferred: the bounded trace recorded only 0.184 ms of
+pageable HtoD copy device time across 125 events, versus 22.174 ms of cuDNN RNN
+device time. This is not a claim that synchronization is free; it means copy
+bandwidth is not the first target. No CUDA graph/torch.compile change was made.
+
 ## Reproduce a run
 
 ```powershell
