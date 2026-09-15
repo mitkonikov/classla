@@ -29,10 +29,11 @@ class NERProcessor(UDProcessor):
         # set up a eval-only data loader and skip tag preprocessing
         batch = DataLoader(
             document, self.config['batch_size'], self.config, vocab=self.vocab, evaluation=True, preprocess_tags=False,
-            inference_only=True)
+            inference_only=True, sort_during_eval=self.config.get('sort_during_eval', True))
         preds = []
         for i, b in enumerate(batch):
             preds += self.trainer.predict(b)
+        preds = unsort(preds, batch.data_orig_idx)
         batch.doc.set([doc.NER], [y for x in preds for y in x], to_token=True)
         # collect entities into document attribute
         total = len(batch.doc.build_ents())

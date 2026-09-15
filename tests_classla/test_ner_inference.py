@@ -84,3 +84,25 @@ def test_charlm_inputs_are_preserved():
     assert batch[4].shape[0] == 2
     assert batch[5] is None
     assert len(batch[12]) == 2
+
+
+def test_length_batches_restore_original_order():
+    from classla.models.common.doc import Document
+    from classla.models.common.utils import unsort
+    from classla.models.ner.data import DataLoader
+
+    class Vocab:
+        def map(self, values):
+            return [4] * len(values)
+
+    sentences = [[{'id': i + 1, 'text': 'word'} for i in range(n)] for n in (2, 5, 1, 3)]
+    document = Document(sentences)
+    loader = DataLoader(document, 2, {'charlm': False},
+                        vocab={key: Vocab() for key in ('word', 'char', 'tag')},
+                        evaluation=True, preprocess_tags=False, inference_only=True, sort_during_eval=True)
+    assert loader.data_orig_idx == [1, 3, 0, 2]
+    assert unsort([5, 3, 2, 1], loader.data_orig_idx) == [2, 5, 1, 3]
+    empty = DataLoader(Document([]), 2, {}, vocab={}, evaluation=True,
+                       preprocess_tags=False, inference_only=True, sort_during_eval=True)
+    assert len(empty) == 0
+    assert empty.data_orig_idx == []

@@ -12,7 +12,7 @@ from classla.models.ner.utils import is_bio_scheme, to_bio2, bio2_to_bioes
 logger = logging.getLogger('classla')
 
 class DataLoader:
-    def __init__(self, doc, batch_size, args, pretrain=None, vocab=None, evaluation=False, preprocess_tags=True, inference_only=False):
+    def __init__(self, doc, batch_size, args, pretrain=None, vocab=None, evaluation=False, preprocess_tags=True, inference_only=False, sort_during_eval=False):
         self.batch_size = batch_size
         self.args = args
         self.eval = evaluation
@@ -42,6 +42,10 @@ class DataLoader:
         if self.shuffled:
             random.shuffle(data)
         self.num_examples = len(data)
+        self.data_orig_idx = list(range(len(data)))
+        if self.eval and sort_during_eval:
+            self.data_orig_idx.sort(key=lambda i: len(data[i][0]), reverse=True)
+            data = [data[i] for i in self.data_orig_idx]
 
         # chunk into batches
         self.data = self.chunk_batches(data)
@@ -196,4 +200,3 @@ class DataLoader:
     def chunk_batches(self, data):
         data = [data[i:i+self.batch_size] for i in range(0, len(data), self.batch_size)]
         return data
-

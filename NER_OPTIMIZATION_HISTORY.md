@@ -25,6 +25,9 @@ text and character offsets; entity counts alone are not sufficient.
 | Baseline: `ner-optimization-baseline` | 60.508 | 33.05 | 18.234 | 41.310 | Reference |
 | 1: `ner-optimization-step1` | 37.591 | 53.20 | 17.400 | 19.259 | 2,000/2,000 articles |
 | 2: `ner-optimization-step2` | 34.940 | 57.24 | 17.006 | 17.009 | 2,000/2,000 articles |
+| 3: `ner-optimization-step3/batch-16-repeat-1` | 31.537 | 63.42 | 16.684 | 13.941 | 2,000/2,000 articles |
+| 3: `ner-optimization-step3/batch-32-repeat-1` | 32.463 | 61.61 | 16.984 | 14.511 | 2,000/2,000 articles |
+| 3: `ner-optimization-step3/batch-64-repeat-1` | 38.863 | 51.46 | 19.439 | 17.900 | 2,000/2,000 articles |
 
 ## Step 1: skip training loss during prediction
 
@@ -45,6 +48,17 @@ avoid two pad/dropout/repack round trips; retain training dropout behavior.
 Observed wall-time reduction versus step 1: 7.1%; throughput: 1.73x baseline.
 Three tests pass, including charLM input retention, training backward and
 identical predictions with full versus inference-only inputs.
+
+## Step 3: length-grouped sentence batches
+
+Sort sentences across the bounded outer article batch before forming model
+batches, then restore document order after prediction. Training order is
+unchanged. Set `ner_sort_during_eval=False` in the CLASSLA pipeline to disable.
+All three configurations match baseline entities exactly. Batch 16 remains
+fastest in this short sweep: 9.7% lower wall time than step 2, 1.92x baseline
+throughput. Four regression tests pass, including order restoration and empty
+input. Batch-size changes can alter floating-point arithmetic; exact agreement
+here is a measured sample result, not a universal bitwise guarantee.
 
 ## Reproduce a run
 
