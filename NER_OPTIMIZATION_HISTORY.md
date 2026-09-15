@@ -33,7 +33,7 @@ text and character offsets; entity counts alone are not sufficient.
 | 4: `ner-optimization-step4-workers2` | 17.393 | 114.99 | 9.298 | 17.099 | 2,000/2,000 articles |
 | 4: `ner-optimization-step4-workers4` | 17.544 | 114.00 | 6.930 | 15.925 | 2,000/2,000 articles |
 | 5: `ner-optimization-step5` | 13.737 | 145.60 | 9.425 | 13.445 | 2,000/2,000 articles |
-| Original-order control: `ner-optimization-conservative2k` | 34.255 | 58.39 | 15.800 | 33.840 | Original-order control |
+| Original-order control: `ner-optimization-conservative2k` | 34.255 | 58.39 | 15.800 | 33.840 | 2,000/2,000 articles |
 | 6: `ner-optimization-step6` (original order) | 32.508 | 61.52 | 16.002 | 32.094 | 2,000/2,000 articles |
 
 ## Step 1: skip training loss during prediction
@@ -134,7 +134,11 @@ The second full-sample repeat failed after 3,232 committed articles due to Windo
 denying an atomic `metrics.tmp` replacement (`WinError 5`). It is retained as
 failed, never counted as a fast run. Semora now retries this transient permission
 error at most five times (1.55 s total backoff), still raising persistent failures;
-tests cover both outcomes. A third grouped repeat completed; see final report.
+tests cover both outcomes. The third grouped repeat completed in 132.678 s
+(75.37 articles/s), with the same two changed articles. This substantial timing
+variation is another reason not to advertise the fastest short grouped run as a
+stable full-corpus speedup. Both successful grouped passes produced 145,077
+entities, versus 145,079 in the historical baseline.
 
 ## Step 6: avoid decoding completed/padded sentence rows
 
@@ -151,6 +155,39 @@ configuration; retaining original neural batch composition has a measurable cost
 The unfinished `ner-optimization-conservative10k/batch-16-repeat-1` was explicitly
 stopped before applying this change and marked failed; it is not a timing result.
 
+## Final conservative validation (three complete 10,000-article passes)
+
+CLASSLA code: `6bb8c96`; Semora staging/defaults: `385a9bf` (summary columns:
+`0c0a4ec`). Settings: sentence batch 16, outer batch 32, pipeline depth 3,
+two tokenizer workers, original/input sentence order. The stricter pipeline
+bound includes the batch being written. No competing benchmark models ran.
+
+| Artifact under `ner-optimization-verified10k/` | Wall s | Articles/s | Tokenization s | NER s | Exact baseline equivalence |
+|---|---:|---:|---:|---:|---|
+| `batch-16-repeat-1` | 160.705 | 62.226 | 80.669 | 159.319 | 10,000/10,000 |
+| `batch-16-repeat-2` | 161.660 | 61.858 | 80.907 | 160.331 | 10,000/10,000 |
+| `batch-16-repeat-3` | 161.680 | 61.851 | 80.840 | 160.397 | 10,000/10,000 |
+
+Mean wall time: **161.348 +/- 0.557 s** (sample standard deviation).
+Mean throughput: **61.978 +/- 0.214 articles/s**. Each pass contains exactly the
+same 145,079 entities as `classla-aligned-sweep/batch-16-repeat-1`, verified by
+bidirectional full per-article JSON comparison (zero missing or differing rows).
+Peak allocated CUDA memory was 113,893,376 bytes in each final pass; parent RSS
+does not represent total RAM including tokenizer workers.
+
+The earlier full-sample baseline took 272.435 s (36.706 articles/s): approximately
+**1.69x throughput / 40.8% lower wall time**. That baseline was measured earlier,
+not as part of these three repeats. The fresh 2,000-article comparison gives
+1.86x throughput; do not mix sample sizes when comparing raw durations.
+These are offline sample benchmarks, not a full-corpus indexing estimate or an
+hour-long stability certification. No production database/index was modified.
+
+Machine-readable repeat summary: `ner-optimization-final-summary/summary.csv`
+and `summary.json`, plus `statuses.csv`. Individual metrics/prediction databases,
+profiling results and failed/interrupted outputs are retained for auditing.
+Final focused checks: 9 NER tests (including real model and backward), 11 prior
+POS/lemma regression tests, 17 Semora tests; Semora lint and type checking pass.
+
 ## Reproduce a run
 
 ```powershell
@@ -158,7 +195,11 @@ $py = 'C:/GitHub/semora/artifacts/ner-benchmark/.venv/Scripts/python.exe'
 & $py -m semora.diagnostics.ner run `
   --sample C:/GitHub/semora/artifacts/ner-benchmark/sample.sqlite `
   --adapter classla --device cuda --batch-size 16 --batch-articles 32 `
-  --limit 2000 --output C:/GitHub/semora/artifacts/ner-benchmark/NEW_RUN
+  --pipeline-depth 3 --tokenizer-workers 2 --sentence-order input `
+  --output C:/GitHub/semora/artifacts/ner-benchmark/NEW_RUN
 ```
 
 Use a new output directory each time. Stop other GPU workloads before comparing.
+Add `--limit 2000` for the short tuning sample. Optional length grouping is a
+speed/strict-reproducibility trade-off, not the default; changing neural batch
+size/composition can also change near-tied model decisions.
