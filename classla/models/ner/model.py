@@ -106,9 +106,10 @@ class NERTagger(nn.Module):
         if self.args['word_dropout'] > 0:
             lstm_inputs = self.worddrop(lstm_inputs, self.drop_replacement)
         lstm_inputs = self.drop(lstm_inputs)
-        lstm_inputs = pad(lstm_inputs)
-        lstm_inputs = self.lockeddrop(lstm_inputs)
-        lstm_inputs = pack(lstm_inputs).data
+        if self.training:
+            lstm_inputs = pad(lstm_inputs)
+            lstm_inputs = self.lockeddrop(lstm_inputs)
+            lstm_inputs = pack(lstm_inputs).data
 
         if self.input_transform:
             lstm_inputs = self.input_transform(lstm_inputs)
@@ -122,9 +123,10 @@ class NERTagger(nn.Module):
 
         # prediction layer
         lstm_outputs = self.drop(lstm_outputs)
-        lstm_outputs = pad(lstm_outputs)
-        lstm_outputs = self.lockeddrop(lstm_outputs)
-        lstm_outputs = pack(lstm_outputs).data
+        if self.training:
+            lstm_outputs = pad(lstm_outputs)
+            lstm_outputs = self.lockeddrop(lstm_outputs)
+            lstm_outputs = pack(lstm_outputs).data
         logits = pad(self.tag_clf(lstm_outputs)).contiguous()
         if compute_loss:
             loss, trans = self.crit(logits, word_mask, tags)

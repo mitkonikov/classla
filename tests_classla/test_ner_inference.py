@@ -41,6 +41,12 @@ def test_real_model_loss_and_predictions():
     loader = DataLoader(document, 16, processor.config, vocab=trainer.vocab,
                         evaluation=True, preprocess_tags=False)
     batch = loader[0]
+    fast_loader = DataLoader(document, 16, processor.config, vocab=trainer.vocab,
+                             evaluation=True, preprocess_tags=False, inference_only=True)
+    fast_batch = fast_loader[0]
+    assert fast_batch[4] is None  # Slovenian NER does not use charLM.
+    assert fast_batch[5] is None  # No training targets during prediction.
+    assert trainer.predict(batch) == trainer.predict(fast_batch)
     inputs, orig, word_orig, char_orig, sentlens, wordlens, charlens, offsets = unpack_batch(batch, False)
     word, mask, wordchars, charmask, chars, tags = inputs
     args = (word, mask, wordchars, charmask, tags, word_orig, sentlens, wordlens,
@@ -57,3 +63,24 @@ def test_real_model_loss_and_predictions():
     loss, _, _ = trainer.model(*args)
     loss.backward()
     assert trainer.model.tag_clf.weight.grad is not None
+
+
+def test_charlm_inputs_are_preserved():
+    from classla.models.common.doc import Document
+    from classla.models.ner.data import DataLoader
+
+    class Vocab:
+        def map(self, values):
+            return [4] * len(values)
+
+        def unit2id(self, value):
+            return 4
+
+    document = Document([[{'id': 1, 'text': 'Janez'}, {'id': 2, 'text': 'Novak'}]])
+    vocab = {key: Vocab() for key in ('word', 'char', 'tag')}
+    loader = DataLoader(document, 16, {'charlm': True}, vocab=vocab,
+                        evaluation=True, preprocess_tags=False, inference_only=True)
+    batch = loader[0]
+    assert batch[4].shape[0] == 2
+    assert batch[5] is None
+    assert len(batch[12]) == 2

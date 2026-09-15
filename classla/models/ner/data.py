@@ -12,13 +12,14 @@ from classla.models.ner.utils import is_bio_scheme, to_bio2, bio2_to_bioes
 logger = logging.getLogger('classla')
 
 class DataLoader:
-    def __init__(self, doc, batch_size, args, pretrain=None, vocab=None, evaluation=False, preprocess_tags=True):
+    def __init__(self, doc, batch_size, args, pretrain=None, vocab=None, evaluation=False, preprocess_tags=True, inference_only=False):
         self.batch_size = batch_size
         self.args = args
         self.eval = evaluation
         self.shuffled = not self.eval
         self.doc = doc
         self.preprocess_tags = preprocess_tags
+        self.inference_only = inference_only
 
         data = self.load_doc(self.doc)
         self.tags = [[w[1] for w in sent] for sent in data]
@@ -79,7 +80,7 @@ class DataLoader:
         for sent in data:
             processed_sent = [vocab['word'].map([case(w[0]) for w in sent])]
             processed_sent += [[vocab['char'].map([char_case(x) for x in w[0]]) for w in sent]]
-            processed_sent += [vocab['tag'].map([w[1] for w in sent])]
+            processed_sent += [None if self.inference_only else vocab['tag'].map([w[1] for w in sent])]
             processed.append(processed_sent)
         return processed
 
@@ -103,10 +104,16 @@ class DataLoader:
         sentlens = [len(x) for x in batch[0]]
 
         # sort chars by lens for easy char-LM operations
-        chars_forward, chars_backward, charoffsets_forward, charoffsets_backward, charlens = self.process_chars(batch[1])
-        chars_sorted, char_orig_idx = sort_all([chars_forward, chars_backward, charoffsets_forward, charoffsets_backward], charlens)
-        chars_forward, chars_backward, charoffsets_forward, charoffsets_backward = chars_sorted
-        charlens = [len(sent) for sent in chars_forward]
+        chars = charoffsets = charlens = char_orig_idx = None
+        if self.args.get('charlm'):
+            chars_forward, chars_backward, charoffsets_forward, charoffsets_backward, charlens = self.process_chars(batch[1])
+            chars_sorted, char_orig_idx = sort_all([chars_forward, chars_backward, charoffsets_forward, charoffsets_backward], charlens)
+            chars_forward, chars_backward, charoffsets_forward, charoffsets_backward = chars_sorted
+            charlens = [len(sent) for sent in chars_forward]
+            chars_forward = get_long_tensor(chars_forward, batch_size, pad_id=self.vocab['char'].unit2id(' '))
+            chars_backward = get_long_tensor(chars_backward, batch_size, pad_id=self.vocab['char'].unit2id(' '))
+            chars = torch.stack([chars_forward, chars_backward])
+            charoffsets = [charoffsets_forward, charoffsets_backward]
 
         # sort words by lens for easy char-RNN operations
         batch_words = [w for sent in batch[1] for w in sent]
@@ -120,11 +127,7 @@ class DataLoader:
         words_mask = torch.eq(words, PAD_ID)
         wordchars = get_long_tensor(batch_words, len(wordlens))
         wordchars_mask = torch.eq(wordchars, PAD_ID)
-        chars_forward = get_long_tensor(chars_forward, batch_size, pad_id=self.vocab['char'].unit2id(' '))
-        chars_backward = get_long_tensor(chars_backward, batch_size, pad_id=self.vocab['char'].unit2id(' '))
-        chars = torch.cat([chars_forward.unsqueeze(0), chars_backward.unsqueeze(0)]) # padded forward and backward char idx
-        charoffsets = [charoffsets_forward, charoffsets_backward] # idx for forward and backward lm to get word representation
-        tags = get_long_tensor(batch[2], batch_size)
+        tags = None if self.inference_only else get_long_tensor(batch[2], batch_size)
 
         return words, words_mask, wordchars, wordchars_mask, chars, tags, orig_idx, word_orig_idx, char_orig_idx, sentlens, wordlens, charlens, charoffsets
 

@@ -28,7 +28,8 @@ class NERProcessor(UDProcessor):
     def process(self, document):
         # set up a eval-only data loader and skip tag preprocessing
         batch = DataLoader(
-            document, self.config['batch_size'], self.config, vocab=self.vocab, evaluation=True, preprocess_tags=False)
+            document, self.config['batch_size'], self.config, vocab=self.vocab, evaluation=True, preprocess_tags=False,
+            inference_only=True)
         preds = []
         for i, b in enumerate(batch):
             preds += self.trainer.predict(b)

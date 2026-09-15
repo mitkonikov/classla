@@ -24,6 +24,7 @@ text and character offsets; entity counts alone are not sufficient.
 |---|---:|---:|---:|---:|---|
 | Baseline: `ner-optimization-baseline` | 60.508 | 33.05 | 18.234 | 41.310 | Reference |
 | 1: `ner-optimization-step1` | 37.591 | 53.20 | 17.400 | 19.259 | 2,000/2,000 articles |
+| 2: `ner-optimization-step2` | 34.940 | 57.24 | 17.006 | 17.009 | 2,000/2,000 articles |
 
 ## Step 1: skip training loss during prediction
 
@@ -34,6 +35,16 @@ already disabled gradients, so its gain is not attributable to that decorator.
 Observed wall-time reduction: 37.9%; throughput: 1.61x baseline.
 Tests: mock inference guard; real-model identical logits/transitions with and
 without loss; finite evaluation loss; training backward gradients. Both pass.
+
+## Step 2: inference inputs and packed tensors
+
+Skip target-tag preparation during prediction and skip character-language-model
+sequence construction/transfers when `charlm=false`. Preserve the actual word
+character encoder and the charLM input path for models that need it. During eval,
+avoid two pad/dropout/repack round trips; retain training dropout behavior.
+Observed wall-time reduction versus step 1: 7.1%; throughput: 1.73x baseline.
+Three tests pass, including charLM input retention, training backward and
+identical predictions with full versus inference-only inputs.
 
 ## Reproduce a run
 
