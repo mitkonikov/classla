@@ -252,6 +252,40 @@ pageable HtoD copy device time across 125 events, versus 22.174 ms of cuDNN RNN
 device time. This is not a claim that synchronization is free; it means copy
 bandwidth is not the first target. No CUDA graph/torch.compile change was made.
 
+### Alternating-order controls (three repetitions per configuration)
+
+All runs use the same 2,000-article prefix, outer depth 3, two tokenizer workers,
+sentence batch 16, outer batch 32 and original sentence order. Control uses
+Semora's fresh-process `ablation:original_tensors` adapter: original per-row
+Torch construction, NumPy decoding, inner depth 1. JIT1/JIT2 use bulk tensors
+and Numba with inner depth 1/2. Order was control/JIT1/JIT2, JIT2/JIT1/control,
+then control/JIT1/JIT2, reducing simple order bias. All nine complete per-article
+outputs match the round-2 reference exactly in both directions.
+
+| Artifact `ner-round2-paired-...` | Wall s | Articles/s |
+|---|---:|---:|
+| `control-1` | 31.030 | 64.454 |
+| `control-2` | 30.883 | 64.761 |
+| `control-3` | 31.082 | 64.345 |
+| `jit1-1` | 20.188 | 99.068 |
+| `jit1-2` | 20.075 | 99.629 |
+| `jit1-3` | 20.503 | 97.546 |
+| `jit2-1` | 20.593 | 97.121 |
+| `jit2-2` | 20.331 | 98.372 |
+| `jit2-3` | 20.761 | 96.335 |
+
+Means +/- sample standard deviations:
+
+- Control: 30.998 +/- 0.104 s; 64.520 +/- 0.216 articles/s.
+- JIT1: 20.255 +/- 0.222 s; 98.747 +/- 1.078 articles/s.
+- JIT2: 20.562 +/- 0.217 s; 97.276 +/- 1.028 articles/s.
+
+The selected setting is JIT1: **1.53x control throughput / 34.7% lower wall time**.
+The controlled comparison measures the combination of bulk tensors and Numba,
+not Numba alone. Inner threading is implemented/tested but remains optional;
+it did not improve this selected configuration. No forced default change to
+Numba: installations without the optional dependency retain NumPy decoding.
+
 ## Reproduce a run
 
 ```powershell
