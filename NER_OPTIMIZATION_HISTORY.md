@@ -28,6 +28,10 @@ text and character offsets; entity counts alone are not sufficient.
 | 3: `ner-optimization-step3/batch-16-repeat-1` | 31.537 | 63.42 | 16.684 | 13.941 | 2,000/2,000 articles |
 | 3: `ner-optimization-step3/batch-32-repeat-1` | 32.463 | 61.61 | 16.984 | 14.511 | 2,000/2,000 articles |
 | 3: `ner-optimization-step3/batch-64-repeat-1` | 38.863 | 51.46 | 19.439 | 17.900 | 2,000/2,000 articles |
+| 4: `ner-optimization-step4-sequential` | 32.239 | 62.04 | 16.835 | 14.434 | 2,000/2,000 articles |
+| 4: `ner-optimization-step4-threads` | 32.867 | 60.85 | 31.613 | 26.590 | 2,000/2,000 articles |
+| 4: `ner-optimization-step4-workers2` | 17.393 | 114.99 | 9.298 | 17.099 | 2,000/2,000 articles |
+| 4: `ner-optimization-step4-workers4` | 17.544 | 114.00 | 6.930 | 15.925 | 2,000/2,000 articles |
 
 ## Step 1: skip training loss during prediction
 
@@ -59,6 +63,34 @@ fastest in this short sweep: 9.7% lower wall time than step 2, 1.92x baseline
 throughput. Four regression tests pass, including order restoration and empty
 input. Batch-size changes can alter floating-point arithmetic; exact agreement
 here is a measured sample result, not a universal bitwise guarantee.
+
+## Step 4: bounded CPU/GPU/write overlap (Semora)
+
+The implementation is in Semora's `diagnostics/ner/staging.py` and adapter,
+reusing CLASSLA's existing `process_tokenized` entry point. One preparation
+thread reads sample rows, optionally dispatches CPU-only tokenization to persistent
+spawned workers, reconstructs documents and validates article-relative offsets.
+One inference thread owns the GPU model; the calling thread validates and writes
+results. Pipeline depth bounds queued work; no CUDA tensors/models cross IPC.
+No new production index is built. Threads/pools close on completion and failures.
+
+Sequential control uses depth 1; all overlapped runs use depth 3. Thread-only
+overlap provides no gain here. Two CPU tokenizer workers achieve 1.85x the new
+sequential control and 3.48x the original baseline; four workers are not faster
+in this short sample. These observations are consistent with CPU contention but
+do not isolate the GIL as the sole cause. Stage timings overlap and include
+contention/waiting, so must not be summed to infer wall time or GPU utilization.
+Parent RSS excludes tokenizer-worker memory. Warm-up uses two articles; additional
+lazy worker startup, if any, remains included in measured wall time.
+
+Thirteen Semora tests pass (two unrelated opt-in model tests skipped); type check
+and lint pass. Tests cover stable order, a single inference owner, exception
+propagation and early-close cleanup. All four real-model runs preserve baseline
+entity JSON exactly. New metrics fingerprint editable CLASSLA NER code, and
+summary grouping includes pipeline depth to avoid mixing different configurations.
+
+Use `--pipeline-depth 3 --tokenizer-workers 2` to enable this path. Defaults remain
+sequential for compatibility and explicit timing comparisons.
 
 ## Reproduce a run
 
