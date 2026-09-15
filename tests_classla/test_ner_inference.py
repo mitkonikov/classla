@@ -132,3 +132,16 @@ def test_batched_viterbi_empty_and_invalid_lengths():
     assert viterbi_decode_batch(np.zeros((0, 0, 2)), np.zeros((2, 2)), []) == []
     with pytest.raises(ValueError, match='positive'):
         viterbi_decode_batch(np.zeros((1, 2, 2)), np.zeros((2, 2)), [0])
+
+
+def test_bulk_input_tensors_match_original():
+    from classla.models.ner.data import get_long_tensor
+    from classla.models.common.data import get_long_tensor as original
+
+    for rows in ([[4]], [[1, 2, 3], [7], [8, 9]], [[1] * 500, [2], [3] * 20]):
+        for padding in (0, 4):
+            actual = get_long_tensor(rows, len(rows), padding)
+            assert actual.is_contiguous()
+            assert actual.dtype == torch.long
+            assert torch.equal(actual, original(rows, len(rows), padding))
+    assert get_long_tensor([], 0).shape == (0, 0)

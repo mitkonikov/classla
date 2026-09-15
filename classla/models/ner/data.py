@@ -1,8 +1,9 @@
 import random
 import logging
 import torch
+import numpy as np
 
-from classla.models.common.data import map_to_ids, get_long_tensor, get_float_tensor, sort_all
+from classla.models.common.data import map_to_ids, get_float_tensor, sort_all
 from classla.models.common.vocab import PAD_ID, VOCAB_PREFIX
 from classla.models.pos.vocab import CharVocab, WordVocab
 from classla.models.ner.vocab import TagVocab, MultiVocab
@@ -10,6 +11,17 @@ from classla.models.common.doc import *
 from classla.models.ner.utils import is_bio_scheme, to_bio2, bio2_to_bioes
 
 logger = logging.getLogger('classla')
+
+
+def get_long_tensor(tokens_list, batch_size, pad_id=PAD_ID):
+    """NER inputs are 2-D: build once on CPU, rather than a Torch tensor per row."""
+    if len(tokens_list) != batch_size:
+        raise ValueError('Batch size must match the number of input rows')
+    width = max((len(row) for row in tokens_list), default=0)
+    values = np.full((batch_size, width), pad_id, dtype=np.int64)
+    for index, row in enumerate(tokens_list):
+        values[index, :len(row)] = row
+    return torch.from_numpy(values)
 
 class DataLoader:
     def __init__(self, doc, batch_size, args, pretrain=None, vocab=None, evaluation=False, preprocess_tags=True, inference_only=False, sort_during_eval=False):
