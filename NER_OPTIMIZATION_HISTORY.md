@@ -111,6 +111,29 @@ At depth 3 / two tokenizer workers, observed wall time falls another 21.0% versu
 step 4 workers2, reaching 4.40x original baseline throughput. Complete entity JSON
 matches for all 2,000 articles. A final larger-sample repeat check follows below.
 
+## Larger-sample findings and conservative defaults
+
+The first full 10,000-article run with length grouping (`ner-optimization-final10k/
+batch-16-repeat-1`) took 85.326 s, 117.20 articles/s. It matched 9,998/10,000
+historical baseline article outputs: one PER mention and one ORG mention were
+absent. Offsets of retained entities were unchanged. These were outside the
+2,000-article tuning prefix, so the earlier exact comparisons remain valid.
+
+Rerunning the two original 32-article batches isolated the change to sentence
+grouping: both scalar and batched decoders differ with grouping enabled; both
+match the historical baseline with original sentence order. This is consistent
+with batch-dependent numerical effects, not a batched decoder discrepancy.
+Consequently grouping is now OPT-IN: CLASSLA `ner_sort_during_eval=True`, or
+Semora `--sentence-order length`. Default `input` order preserves original batches.
+The length-grouping optimization remains available, but is not represented as
+universally prediction-identical. Final conservative validation is recorded below.
+
+The second full-sample repeat failed after 3,232 committed articles due to Windows
+denying an atomic `metrics.tmp` replacement (`WinError 5`). It is retained as
+failed, never counted as a fast run. Semora now retries this transient permission
+error at most five times (1.55 s total backoff), still raising persistent failures;
+tests cover both outcomes. A third grouped repeat completed; see final report.
+
 ## Reproduce a run
 
 ```powershell
