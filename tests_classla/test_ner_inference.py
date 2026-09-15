@@ -115,7 +115,7 @@ def test_batched_viterbi_matches_scalar(dtype, ties):
     from classla.models.common.crf import viterbi_decode, viterbi_decode_batch
 
     rng = np.random.default_rng(42)
-    for lengths in ([1], [1, 17, 3, 8], [31] * 16):
+    for lengths in ([1], [1, 17, 3, 8], [31] * 16, [1, 200, 2, 1, 3]):
         scores = rng.normal(size=(len(lengths), max(lengths), 9)).astype(dtype)
         transitions = rng.normal(size=(9, 9)).astype(dtype)
         if ties:

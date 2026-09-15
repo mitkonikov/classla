@@ -33,6 +33,8 @@ text and character offsets; entity counts alone are not sufficient.
 | 4: `ner-optimization-step4-workers2` | 17.393 | 114.99 | 9.298 | 17.099 | 2,000/2,000 articles |
 | 4: `ner-optimization-step4-workers4` | 17.544 | 114.00 | 6.930 | 15.925 | 2,000/2,000 articles |
 | 5: `ner-optimization-step5` | 13.737 | 145.60 | 9.425 | 13.445 | 2,000/2,000 articles |
+| Original-order control: `ner-optimization-conservative2k` | 34.255 | 58.39 | 15.800 | 33.840 | Original-order control |
+| 6: `ner-optimization-step6` (original order) | 32.508 | 61.52 | 16.002 | 32.094 | 2,000/2,000 articles |
 
 ## Step 1: skip training loss during prediction
 
@@ -133,6 +135,21 @@ denying an atomic `metrics.tmp` replacement (`WinError 5`). It is retained as
 failed, never counted as a fast run. Semora now retries this transient permission
 error at most five times (1.55 s total backoff), still raising persistent failures;
 tests cover both outcomes. A third grouped repeat completed; see final report.
+
+## Step 6: avoid decoding completed/padded sentence rows
+
+The original-order control had mixed sentence lengths. The batched decoder now
+sorts only already-computed score rows internally and shrinks its active prefix
+as sentences end, then restores output order. Neural inference batches are NOT
+reordered. Regression tests include one 200-token sentence mixed with 1-3-token
+sentences, random scores, exact ties and both dtypes. All nine NER tests pass.
+
+The 2,000-article run matches every baseline entity and takes 32.508 s versus
+34.255 s for the immediate original-order control (5.1% lower wall time). Its
+throughput is 1.86x the initial baseline. This is slower than the optional grouped
+configuration; retaining original neural batch composition has a measurable cost.
+The unfinished `ner-optimization-conservative10k/batch-16-repeat-1` was explicitly
+stopped before applying this change and marked failed; it is not a timing result.
 
 ## Reproduce a run
 

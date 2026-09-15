@@ -137,20 +137,24 @@ def viterbi_decode_batch(scores, transition_params, lengths):
         raise ValueError('Transition matrix does not match tag count')
     if not len(lengths):
         return []
-    state = scores[:, 0].copy()
+    # Reorder only already-computed scores, never the neural inference batches.
+    order = np.argsort(-lengths, kind='stable')
+    sorted_lengths = lengths[order]
+    state = scores[order, 0].copy()
     backpointers = np.empty(scores.shape, dtype=np.int32)
+    active = len(lengths)
     for step in range(1, int(lengths.max())):
-        candidates = state[:, :, None] + transition_params[None, :, :]
-        next_state = scores[:, step] + candidates.max(axis=1)
-        backpointers[:, step] = candidates.argmax(axis=1)
-        active = lengths > step
-        state[active] = next_state[active]
-    paths = []
-    for row, length in enumerate(lengths):
+        while sorted_lengths[active - 1] <= step:
+            active -= 1
+        candidates = state[:active, :, None] + transition_params[None, :, :]
+        state[:active] = scores[order[:active], step] + candidates.max(axis=1)
+        backpointers[:active, step] = candidates.argmax(axis=1)
+    paths = [None] * len(lengths)
+    for row, length in enumerate(sorted_lengths):
         path = [int(state[row].argmax())]
         for step in range(int(length) - 1, 0, -1):
             path.append(int(backpointers[row, step, path[-1]]))
-        paths.append(path[::-1])
+        paths[order[row]] = path[::-1]
     return paths
 
 
