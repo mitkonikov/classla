@@ -76,7 +76,7 @@ class NERTagger(nn.Module):
             "Input embedding matrix must match size: {} x {}".format(vocab_size, dim)
         self.word_emb.weight.data.copy_(emb_matrix)
 
-    def forward(self, word, word_mask, wordchars, wordchars_mask, tags, word_orig_idx, sentlens, wordlens, chars, charoffsets, charlens, char_orig_idx):
+    def forward(self, word, word_mask, wordchars, wordchars_mask, tags, word_orig_idx, sentlens, wordlens, chars, charoffsets, charlens, char_orig_idx, compute_loss=True):
         
         def pack(x):
             return pack_padded_sequence(x, sentlens, batch_first=True)
@@ -126,6 +126,9 @@ class NERTagger(nn.Module):
         lstm_outputs = self.lockeddrop(lstm_outputs)
         lstm_outputs = pack(lstm_outputs).data
         logits = pad(self.tag_clf(lstm_outputs)).contiguous()
-        loss, trans = self.crit(logits, word_mask, tags)
+        if compute_loss:
+            loss, trans = self.crit(logits, word_mask, tags)
+        else:
+            loss, trans = None, self.crit._transitions
         
         return loss, logits, trans

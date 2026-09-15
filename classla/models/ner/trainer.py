@@ -69,13 +69,14 @@ class Trainer(BaseTrainer):
         self.optimizer.step()
         return loss_val
 
+    @torch.inference_mode()
     def predict(self, batch, unsort=True):
         inputs, orig_idx, word_orig_idx, char_orig_idx, sentlens, wordlens, charlens, charoffsets = unpack_batch(batch, self.use_cuda)
         word, word_mask, wordchars, wordchars_mask, chars, tags = inputs
 
         self.model.eval()
         batch_size = word.size(0)
-        _, logits, trans = self.model(word, word_mask, wordchars, wordchars_mask, tags, word_orig_idx, sentlens, wordlens, chars, charoffsets, charlens, char_orig_idx)
+        _, logits, trans = self.model(word, word_mask, wordchars, wordchars_mask, tags, word_orig_idx, sentlens, wordlens, chars, charoffsets, charlens, char_orig_idx, compute_loss=False)
 
         # decode
         trans = trans.data.cpu().numpy()
